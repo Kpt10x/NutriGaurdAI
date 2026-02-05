@@ -3,7 +3,7 @@ import streamlit as st
 from metabolism import calculate_bmr, calculate_tdee, calculate_target_calories
 from utils import validate_profile
 
-st.title("NutriGuard AI – Phase 1: Metabolic Engine")
+st.title("NutriGuard AI")
 
 if "profile" not in st.session_state:
     st.session_state.profile = {
@@ -44,3 +44,24 @@ if not missing:
     st.metric("Target Calories", target)
 else:
     st.info(f"Missing fields: {missing}")
+
+st.divider()
+st.header("Meal Analysis (Phase 2)")
+
+meal = st.text_input("What did you eat today?")
+
+if st.button("Analyze Meal"):
+    from nutrition_api import analyze_meal
+    from utils import validate_nutrition_json
+
+    try:
+        nutrition = analyze_meal(meal)
+
+        if validate_nutrition_json(nutrition):
+            st.success("Meal analyzed successfully")
+            st.json(nutrition["total"])
+        else:
+            st.error("Invalid nutrition data format")
+
+    except Exception as e:
+        st.error(str(e))
