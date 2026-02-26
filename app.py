@@ -65,3 +65,30 @@ if st.button("Analyze Meal"):
 
     except Exception as e:
         st.error(str(e))
+
+st.divider()
+st.header("Health Guardrails – Phase 3")
+
+# Optional health condition input (once)
+if "health_condition" not in st.session_state:
+    st.session_state.health_condition = st.text_input(
+        "Do you have any health condition? (Diabetes / BP / Kidney / None)",
+        value="None"
+    )
+
+if st.button("Check Health Impact"):
+    from guardrails import run_guardrails
+
+    profile = st.session_state.profile
+    profile["health_condition"] = st.session_state.health_condition
+
+    if "nutrition_data" in locals():
+        alerts = run_guardrails(profile, nutrition_data)
+
+        if alerts:
+            for alert in alerts:
+                st.error(alert)
+        else:
+            st.success("✅ No health risks detected for this meal.")
+    else:
+        st.warning("Please analyze a meal first.")
