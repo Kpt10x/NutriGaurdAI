@@ -1,94 +1,134 @@
-#streamline entry point
 import streamlit as st
 from metabolism import calculate_bmr, calculate_tdee, calculate_target_calories
-from utils import validate_profile
+from utils import validate_profile, validate_nutrition_json
+from nutrition_api import analyze_meal
+from guardrails import run_guardrails
 
+
+# ---------------------------------------------------
+# App Config
+# ---------------------------------------------------
+st.set_page_config(page_title="NutriGuard AI", layout="centered")
 st.title("NutriGuard AI")
+st.caption("Context-Aware Nutrition Intelligence System")
 
+
+# ---------------------------------------------------
+# Session State Initialization
+# ---------------------------------------------------
 if "profile" not in st.session_state:
     st.session_state.profile = {
-        "age": None, "height_cm": None, "weight_kg": None,
-        "gender": None, "activity_level": None, "goal": None
+        "age": None,
+        "height_cm": None,
+        "weight_kg": None,
+        "gender": None,
+        "activity_level": None,
+        "goal": None,
+        "health_condition": "None"
     }
 
-msg = st.text_input("Tell me about yourself (age, height, weight, activity, goal)")
+if "nutrition_data" not in st.session_state:
+    st.session_state.nutrition_data = None
 
-if msg:
-    import re
-    if "year" in msg:
-        st.session_state.profile["age"] = int(re.findall(r"\d+", msg)[0])
-    if "cm" in msg:
-        st.session_state.profile["height_cm"] = int(re.findall(r"\d+ cm", msg)[0].split()[0])
-    if "kg" in msg:
-        st.session_state.profile["weight_kg"] = int(re.findall(r"\d+ kg", msg)[0].split()[0])
-    if "male" in msg.lower():
-        st.session_state.profile["gender"] = "male"
-    if "female" in msg.lower():
-        st.session_state.profile["gender"] = "female"
-    if "sedentary" in msg.lower():
-        st.session_state.profile["activity_level"] = "sedentary"
-    if "lose" in msg.lower():
-        st.session_state.profile["goal"] = "loss"
 
-missing = validate_profile(st.session_state.profile)
+# ---------------------------------------------------
+# PHASE 1 – Profile Intake & Metabolic Engine
+# ---------------------------------------------------
+st.header("Phase 1 – Metabolic Profile")
 
-if not missing:
-    p = st.session_state.profile
-    bmr = calculate_bmr(p["age"], p["weight_kg"], p["height_cm"], p["gender"])
-    tdee = calculate_tdee(bmr, p["activity_level"])
-    target = calculate_target_calories(tdee, p["goal"])
+with st.expander("Enter Your Details"):
+    age = st.number_input("Age", min_value=1, max_value=100, step=1)
+    height = st.number_input("Height (cm)", min_value=50, max_value=250)
+    weight = st.number_input("Weight (kg)", min_value=20, max_value=200)
+    gender = st.selectbox("Gender", ["Male", "Female"])
+    activity = st.selectbox(
+        "Activity Level",
+        ["sedentary", "light", "moderate", "very_active"]
+    )
+    goal = st.selectbox("Goal", ["loss", "maintenance", "gain"])
+    condition = st.selectbox(
+        "Health Condition",
+        ["None", "Diabetes", "Hypertension", "Kidney"]
+    )
 
-    st.success("Profile Completed")
-    st.metric("BMR", round(bmr, 1))
-    st.metric("TDEE", round(tdee, 1))
+    if st.button("Save Profile"):
+        st.session_state.profile.update({
+            "age": age,
+            "height_cm": height,
+            "weight_kg": weight,
+            "gender": gender.lower(),
+            "activity_level": activity,
+            "goal": goal,
+            "health_condition": condition
+        })
+        st.success("Profile Saved")
+
+
+profile = st.session_state.profile
+
+missing_fields = validate_profile(profile)
+
+if not missing_fields:
+    bmr = calculate_bmr(
+        profile["age"],
+        profile["weight_kg"],
+        profile["height_cm"],
+        profile["gender"]
+    )
+    tdee = calculate_tdee(bmr, profile["activity_level"])
+    target = calculate_target_calories(tdee, profile["goal"])
+
+    st.metric("BMR", round(bmr, 2))
+    st.metric("TDEE", round(tdee, 2))
     st.metric("Target Calories", target)
+
+    st.session_state.profile["target_calories"] = target
+
 else:
-    st.info(f"Missing fields: {missing}")
+    st.info(f"Missing fields: {missing_fields}")
 
+
+# ---------------------------------------------------
+# PHASE 2 – Meal Analysis (Gemini)
+# ---------------------------------------------------
 st.divider()
-st.header("Meal Analysis (Phase 2)")
+st.header("Phase 2 – Meal Analysis")
 
-meal = st.text_input("What did you eat today?")
+meal_text = st.text_input("What did you eat?")
 
 if st.button("Analyze Meal"):
-    from nutrition_api import analyze_meal
-    from utils import validate_nutrition_json
-
     try:
-        nutrition = analyze_meal(meal)
+        nutrition_data = analyze_meal(meal_text)
 
-        if validate_nutrition_json(nutrition):
+        if validate_nutrition_json(nutrition_data):
+            st.session_state.nutrition_data = nutrition_data
             st.success("Meal analyzed successfully")
-            st.json(nutrition["total"])
+            st.json(nutrition_data["total"])
         else:
-            st.error("Invalid nutrition data format")
+            st.error("Invalid nutrition data structure")
 
     except Exception as e:
         st.error(str(e))
 
-st.divider()
-st.header("Health Guardrails – Phase 3")
 
-# Optional health condition input (once)
-if "health_condition" not in st.session_state:
-    st.session_state.health_condition = st.text_input(
-        "Do you have any health condition? (Diabetes / BP / Kidney / None)",
-        value="None"
-    )
+# ---------------------------------------------------
+# PHASE 3 – Health Guardrails
+# ---------------------------------------------------
+st.divider()
+st.header("Phase 3 – Health Guardrails")
 
 if st.button("Check Health Impact"):
-    from guardrails import run_guardrails
 
-    profile = st.session_state.profile
-    profile["health_condition"] = st.session_state.health_condition
-
-    if "nutrition_data" in locals():
-        alerts = run_guardrails(profile, nutrition_data)
+    if st.session_state.nutrition_data is None:
+        st.warning("Please analyze a meal first.")
+    else:
+        alerts = run_guardrails(
+            st.session_state.profile,
+            st.session_state.nutrition_data
+        )
 
         if alerts:
             for alert in alerts:
                 st.error(alert)
         else:
-            st.success("✅ No health risks detected for this meal.")
-    else:
-        st.warning("Please analyze a meal first.")
+            st.success("No health risks detected for this meal.")
