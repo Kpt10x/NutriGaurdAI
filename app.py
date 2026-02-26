@@ -3,7 +3,7 @@ from metabolism import calculate_bmr, calculate_tdee, calculate_target_calories
 from utils import validate_profile, validate_nutrition_json
 from nutrition_api import analyze_meal
 from guardrails import run_guardrails
-
+import plotly.express as px
 
 # ---------------------------------------------------
 # App Config
@@ -132,3 +132,57 @@ if st.button("Check Health Impact"):
                 st.error(alert)
         else:
             st.success("No health risks detected for this meal.")
+
+# ---------------------------------------------------
+# PHASE 4 – Calorie & Macro Feedback
+# ---------------------------------------------------
+st.divider()
+st.header("Phase 4 – Daily Feedback")
+
+if st.session_state.nutrition_data and "target_calories" in st.session_state.profile:
+
+    totals = st.session_state.nutrition_data["total"]
+    target = st.session_state.profile["target_calories"]
+
+    calories_consumed = totals["calories"]
+    remaining = target - calories_consumed
+
+    # --- Metrics ---
+    col1, col2 = st.columns(2)
+    col1.metric("Calories Consumed", calories_consumed)
+    col2.metric("Remaining Calories", remaining)
+
+    # --- Progress Bar ---
+    progress_ratio = min(calories_consumed / target, 1.0)
+    st.progress(progress_ratio)
+
+    # --- Macro Distribution Chart ---
+    macro_data = {
+        "Macro": ["Protein", "Carbs", "Fats"],
+        "Grams": [
+            totals["protein"],
+            totals["carbs"],
+            totals["fats"]
+        ]
+    }
+
+    fig = px.pie(
+        macro_data,
+        names="Macro",
+        values="Grams",
+        title="Macronutrient Distribution",
+        hole=0.4
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    # --- Simple Daily Score Logic ---
+    if remaining > 0:
+        st.success("You are within your calorie target for this meal.")
+    elif remaining > -200:
+        st.warning("Slightly above target. Consider lighter meals later.")
+    else:
+        st.error("Significantly above target. Review portion sizes.")
+
+else:
+    st.info("Analyze a meal to see daily feedback.")
