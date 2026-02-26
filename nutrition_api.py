@@ -1,25 +1,26 @@
+import os
 import json
-import google.generativeai as genai
+from dotenv import load_dotenv
+from google import genai
 from prompts import NUTRITION_SYSTEM_PROMPT
 
-def analyze_meal(meal_text: str) -> dict:
-    """
-    Sends meal text to Gemini and returns structured nutrition JSON.
-    AI is constrained to estimation only.
-    """
+# Load environment variables
+load_dotenv()
 
-    if not meal_text or len(meal_text.strip()) == 0:
+# Initialize client with API key
+client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+
+
+def analyze_meal(meal_text: str) -> dict:
+    if not meal_text.strip():
         raise ValueError("Meal input cannot be empty")
 
-    model = genai.GenerativeModel("gemini-1.5-flash")
-
-    response = model.generate_content(
-        NUTRITION_SYSTEM_PROMPT + f"\nUser input: {meal_text}"
+    response = client.models.generate_content(
+        model="gemini-1.5-flash",
+        contents=NUTRITION_SYSTEM_PROMPT + f"\nUser input: {meal_text}"
     )
 
     try:
-        data = json.loads(response.text)
+        return json.loads(response.text)
     except Exception:
         raise ValueError("Gemini returned invalid JSON")
-
-    return data
